@@ -90,11 +90,6 @@ export default function HomePage() {
     setCredentials(null);
     setStream(null);
   }
-
-  console.log("Secure:", window.isSecureContext);
-  console.log("Media devices:", navigator.mediaDevices);
-  console.log(window.isSecureContext, navigator.mediaDevices);
-
   return (
     <main className="page">
       <header className="header">
