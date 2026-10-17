@@ -12,6 +12,22 @@ const api = axios.create({
   },
 });
 
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error("API request failed:", {
+      url: error.config?.url,
+      baseURL: error.config?.baseURL,
+      method: error.config?.method,
+      status: error.response?.status,
+      responseHeaders: error.response?.headers,
+      responseData: error.response?.data,
+      message: error.message,
+    });
+
+    return Promise.reject(error);
+  }
+);
 function unwrapStream(response) {
   let stream = response?.stream ?? response?.data ?? response;
 
