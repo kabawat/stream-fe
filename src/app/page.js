@@ -1,69 +1,296 @@
-import Image from "next/image";
 
-export default function Home() {
+"use client";
+
+import { useState } from "react";
+import {
+  LiveKitRoom,
+  RoomAudioRenderer,
+  useTracks,
+  useRoomContext,
+  VideoTrack,
+} from "@livekit/components-react";
+import { Track } from "livekit-client";
+
+import {
+  createStream,
+  startStream,
+  getStream,
+  getLiveKitToken,
+  getStreams,
+  endStream,
+} from "@/lib/api";
+
+export default function HomePage() {
+  const [mode, setMode] = useState("host");
+  const [title, setTitle] = useState("My Live Stream");
+  const [streamId, setStreamId] = useState("");
+  const [streams, setStreams] = useState([]);
+  const [stream, setStream] = useState(null);
+  const [credentials, setCredentials] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function run(action) {
+    setBusy(true);
+    setError("");
+
+    try {
+      await action();
+    } catch (err) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startHosting() {
+    await run(async () => {
+      const created = await createStream(title);
+
+      await startStream(created.id);
+
+      const token = await getLiveKitToken(created.id, "host");
+
+      setStream(created);
+      setStreamId(created.id);
+      setCredentials(token);
+    });
+  }
+
+
+  async function joinAsViewer(id = streamId) {
+    await run(async () => {
+      const cleanId = id.trim();
+
+      if (!cleanId) {
+        throw new Error("Enter a stream ID");
+      }
+
+      const found = await getStream(cleanId);
+
+      if (!["starting", "live"].includes(found.status)) {
+        throw new Error(`Stream is not live. Status: ${found.status}`);
+      }
+
+      const token = await getLiveKitToken(cleanId, "viewer");
+
+      setStream(found);
+      setStreamId(cleanId);
+      setCredentials(token);
+    });
+  }
+
+  async function refreshStreams() {
+    await run(async () => {
+      setStreams(await getStreams());
+    });
+  }
+
+  function leaveRoom() {
+    setCredentials(null);
+    setStream(null);
+  }
+
+  console.log("Secure:", window.isSecureContext);
+  console.log("Media devices:", navigator.mediaDevices);
+  console.log(window.isSecureContext, navigator.mediaDevices);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.js
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <main className="page">
+      <header className="header">
+        <h1>Live Streaming Demo</h1>
+        <p>Next.js + Go + MongoDB + LiveKit</p>
+      </header>
+
+      {error && <div className="error">{error}</div>}
+
+      {!credentials && (
+        <>
+          <div className="tabs">
+            <button
+              className={mode === "host" ? "active" : ""}
+              onClick={() => setMode("host")}
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              Host a stream
+            </button>
+
+            <button
+              className={mode === "viewer" ? "active" : ""}
+              onClick={() => setMode("viewer")}
             >
-              Learning
-            </a>{" "}
-            center.
+              Watch a stream
+            </button>
+          </div>
+
+          {mode === "host" ? (
+            <section className="panel">
+              <h2>Start your camera stream</h2>
+
+              <label htmlFor="title">Stream title</label>
+              <input
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                minLength={3}
+                maxLength={100}
+              />
+
+              <button
+                className="primary"
+                disabled={busy || title.trim().length < 3}
+                onClick={startHosting}
+              >
+                {busy ? "Connecting..." : "Start streaming"}
+              </button>
+            </section>
+          ) : (
+            <section className="panel">
+              <h2>Join a live stream</h2>
+
+              <label htmlFor="streamId">Stream ID</label>
+              <input
+                id="streamId"
+                value={streamId}
+                onChange={(e) => setStreamId(e.target.value)}
+                placeholder="Paste stream ID"
+              />
+
+              <button
+                className="primary"
+                disabled={busy || !streamId.trim()}
+                onClick={() => joinAsViewer()}
+              >
+                {busy ? "Joining..." : "Watch stream"}
+              </button>
+
+              <button disabled={busy} onClick={refreshStreams}>
+                Refresh stream list
+              </button>
+
+              {streams.map((item) => (
+                <div className="streamRow" key={item.id}>
+                  <div>
+                    <strong>{item.title}</strong>
+                    <p>
+                      {item.status} · ID: {item.id}
+                    </p>
+                  </div>
+
+                  <button
+                    disabled={busy}
+                    onClick={() => joinAsViewer(item.id)}
+                  >
+                    Watch
+                  </button>
+                </div>
+              ))}
+            </section>
+          )}
+        </>
+      )}
+
+      {credentials && stream && (
+        <section className="panel">
+          <h2>{stream.title}</h2>
+          <p className="muted">
+            Role: {credentials.role} · Stream ID: {stream.id}
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+
+          <LiveKitRoom
+            key={`${stream.id}-${credentials.role}`}
+            serverUrl={credentials.serverUrl}
+            token={credentials.token}
+            connect={true}
+            video={credentials.role === "host"}
+            audio={credentials.role === "host"}
+            onError={(err) => setError(err.message)}
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            <RoomAudioRenderer />
+            <StreamVideo mode={credentials.role} />
+
+            {credentials.role === "host" ? (
+              <HostControls
+                onLeave={async () => {
+                  await endStream(stream.id);
+                  leaveRoom();
+                }}
+              />
+            ) : (
+              <button className="primary" onClick={leaveRoom}>
+                Leave stream
+              </button>
+            )}
+          </LiveKitRoom>
+        </section>
+      )}
+    </main>
+  );
+}
+
+function StreamVideo({ mode }) {
+  const tracks = useTracks(
+    [Track.Source.Camera],
+    { onlySubscribed: mode !== "host" }
+  );
+
+  return (
+    <div className="videoGrid">
+      {tracks.map((track) => (
+        <div
+          className="videoTile"
+          key={`${track.participant.identity}-${track.publication?.trackSid || "camera"}`}
+        >
+          <VideoTrack trackRef={track} />
+          <span className="videoLabel">
+            {track.participant.identity}
+            {track.participant.isLocal ? " (You)" : ""}
+          </span>
         </div>
-      </main>
+      ))}
+
+      {tracks.length === 0 && (
+        <div className="waiting">
+          {mode === "viewer"
+            ? "Waiting for host video..."
+            : "Waiting for camera..."}
+        </div>
+      )}
     </div>
+  );
+}
+
+function HostControls({ onLeave }) {
+  const room = useRoomContext();
+  const [ending, setEnding] = useState(false);
+  const [endError, setEndError] = useState("");
+
+  async function handleEnd() {
+    setEnding(true);
+    setEndError("");
+
+    try {
+      await room.localParticipant.setCameraEnabled(false);
+      await room.localParticipant.setMicrophoneEnabled(false);
+      await room.disconnect();
+      await onLeave();
+    } catch (err) {
+      setEndError(err.message || "Unable to end stream");
+    } finally {
+      setEnding(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        className="danger"
+        disabled={ending}
+        onClick={handleEnd}
+      >
+        {ending ? "Ending..." : "End stream"}
+      </button>
+
+      {endError && <p className="error">{endError}</p>}
+    </>
   );
 }

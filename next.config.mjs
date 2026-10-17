@@ -4,6 +4,7 @@ const nextConfig = {
   experimental: {
     agentFeedback: true,
   },
+  allowedDevOrigins: ["192.168.29.87"],
   cacheComponents: true,
   partialPrefetching: true,
   reactCompiler: true,
