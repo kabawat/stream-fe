@@ -12,22 +12,32 @@ const api = axios.create({
   },
 });
 
+api.interceptors.request.use((config) => {
+  console.log("Axios request:", {
+    url: `${config.baseURL}${config.url}`,
+    method: config.method,
+    headers: config.headers,
+  });
+
+  return config;
+});
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error("API request failed:", {
+    console.error("Axios error details:", {
       url: error.config?.url,
-      baseURL: error.config?.baseURL,
       method: error.config?.method,
       status: error.response?.status,
-      responseHeaders: error.response?.headers,
-      responseData: error.response?.data,
       message: error.message,
+      code: error.code,
     });
 
     return Promise.reject(error);
   }
 );
+
+
 function unwrapStream(response) {
   let stream = response?.stream ?? response?.data ?? response;
 
